@@ -1,0 +1,200 @@
+@import "tailwindcss";
+
+/*
+ * SECTOR design system.
+ *
+ * The venue at dusk: near-black infield, chalk lines, and one hot colour for the
+ * implement's trace. Measured values get a second, cooler colour so a reader can
+ * always tell at a glance what the system SAW from what the system COMPUTED.
+ */
+
+:root {
+  --ink: #06080a;
+  --ink-2: #0b0f12;
+  --panel: #0e1317;
+  --panel-2: #131a1f;
+  --line: rgba(232, 237, 234, 0.09);
+  --line-strong: rgba(232, 237, 234, 0.18);
+  --chalk: #e8edea;
+  --muted: #78878b;
+  --muted-2: #4d5a5e;
+
+  /* Signal: the implement, its trace, anything observed in pixels. */
+  --signal: #ff6b1a;
+  --signal-dim: rgba(255, 107, 26, 0.16);
+  /* Verify: anything solved in metres. */
+  --verify: #3fd9c4;
+  --verify-dim: rgba(63, 217, 196, 0.14);
+  --warn: #ffc53d;
+  --bad: #ff4d4d;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--ink);
+  color: var(--chalk);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* The 34.92 degree sector, used as a background motif rather than a logo. */
+.sector-bg {
+  background:
+    radial-gradient(1200px 700px at 50% -10%, rgba(63, 217, 196, 0.06), transparent 60%),
+    conic-gradient(
+      from 272.54deg at 50% 100%,
+      transparent 0deg,
+      rgba(255, 107, 26, 0.05) 0deg,
+      rgba(255, 107, 26, 0.05) 34.92deg,
+      transparent 34.92deg
+    ),
+    var(--ink);
+}
+
+.panel {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--ink-2) 100%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.hairline {
+  border-top: 1px solid var(--line);
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.display {
+  letter-spacing: -0.035em;
+  font-weight: 680;
+}
+
+/* Metric values settle in rather than popping. */
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.settle {
+  animation: settle 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(63, 217, 196, 0.22), transparent);
+  animation: sweep 1.5s ease-in-out infinite;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--chalk);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: #1a2329;
+  border-color: rgba(232, 237, 234, 0.28);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: #14060a;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ff7f38;
+  border-color: #ff7f38;
+}
+
+select,
+input[type="number"] {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--ink-2);
+  color: var(--chalk);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--signal);
+}
+
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: var(--signal);
+  color: #14060a;
+}

@@ -1,0 +1,598 @@
+{
+  "label": "sector",
+  "url": "http://localhost:3300/",
+  "timestamp": "2026-08-19T20:57:38.958Z",
+  "backend": "cdp",
+  "engine": "visual-qa.mjs",
+  "defectScore": 48,
+  "mobile390Captured": true,
+  "inspectionRequired": "C:\\Users\\oluda\\sector\\.creative\\qa\\sector\\mobile-390.png",
+  "hardRule": "Visual QA cannot be reported as passing until mobile-390.png has actually been viewed with the Read tool.",
+  "results": [
+    {
+      "viewport": {
+        "name": "desktop-1440",
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "probe": {
+        "viewport": {
+          "width": 1440,
+          "height": 900,
+          "dpr": 1
+        },
+        "viewportMeta": {
+          "present": true,
+          "content": "width=device-width, initial-scale=1"
+        },
+        "document": {
+          "scrollWidth": 1425,
+          "clientWidth": 1425,
+          "scrollHeight": 907,
+          "title": "SECTOR — Throws Flight Analysis"
+        },
+        "overflow": {
+          "horizontal": false,
+          "offenders": []
+        },
+        "tapTargets": {
+          "checked": 14,
+          "failures": [
+            {
+              "sel": "button.label",
+              "w": 138,
+              "h": 33,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "button.label",
+              "w": 120,
+              "h": 33,
+              "text": "Your footage"
+            },
+            {
+              "sel": "button.btn",
+              "w": 103,
+              "h": 33,
+              "text": "Hide detections"
+            },
+            {
+              "sel": "button.btn",
+              "w": 39,
+              "h": 36,
+              "text": "▶"
+            },
+            {
+              "sel": "input",
+              "w": 622,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "button.btn.btn-primary",
+              "w": 117,
+              "h": 44,
+              "text": "Analyse flight"
+            },
+            {
+              "sel": "select",
+              "w": 448,
+              "h": 34,
+              "text": "Discus 2.0 kg (senior men)Discus"
+            },
+            {
+              "sel": "input",
+              "w": 219,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 219,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 448,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 448,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 448,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 448,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 448,
+              "h": 16,
+              "text": ""
+            }
+          ]
+        },
+        "contrast": {
+          "checked": 26,
+          "failures": [
+            {
+              "sel": "button.label",
+              "ratio": 1,
+              "need": 4.5,
+              "color": "rgb(255, 107, 26)",
+              "bg": "rgb(255,107,26)",
+              "size": 10,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "p",
+              "ratio": 2.81,
+              "need": 4.5,
+              "color": "rgb(77, 90, 94)",
+              "bg": "rgb(6,8,10)",
+              "size": 12,
+              "text": "Training and film analysis, not officiat"
+            }
+          ]
+        },
+        "hierarchy": {
+          "h1Count": 1,
+          "headingCount": 1,
+          "levelSkips": [],
+          "distinctTextSizes": 6,
+          "sizeHistogram": {
+            "10": 13,
+            "11": 3,
+            "12": 7,
+            "13": 1,
+            "14": 1,
+            "34": 1
+          },
+          "largestText": {
+            "px": 34,
+            "sel": "h1.display"
+          },
+          "largestIsH1": true
+        },
+        "spacing": {
+          "distinctValues": 17,
+          "offGridCount": 49,
+          "offGridPct": 71,
+          "topValues": [
+            "8px x12",
+            "13px x9",
+            "7px x8",
+            "10px x6",
+            "5px x5",
+            "6px x5",
+            "11px x5",
+            "15px x4",
+            "16px x4",
+            "12px x3",
+            "14px x2",
+            "4px x1"
+          ]
+        },
+        "orphans": [],
+        "images": {
+          "total": 0,
+          "issues": []
+        },
+        "cls": 0.0024,
+        "shifts": [
+          0.0024
+        ],
+        "fonts": [
+          "ui-sans-serif",
+          "ui-monospace"
+        ]
+      },
+      "screenshot": "desktop-1440.png",
+      "truncated": false
+    },
+    {
+      "viewport": {
+        "name": "tablet-768",
+        "width": 768,
+        "height": 1024,
+        "dpr": 2
+      },
+      "probe": {
+        "viewport": {
+          "width": 768,
+          "height": 1024,
+          "dpr": 2
+        },
+        "viewportMeta": {
+          "present": true,
+          "content": "width=device-width, initial-scale=1"
+        },
+        "document": {
+          "scrollWidth": 753,
+          "clientWidth": 753,
+          "scrollHeight": 1500,
+          "title": "SECTOR — Throws Flight Analysis"
+        },
+        "overflow": {
+          "horizontal": false,
+          "offenders": []
+        },
+        "tapTargets": {
+          "checked": 14,
+          "failures": [
+            {
+              "sel": "button.label",
+              "w": 138,
+              "h": 33,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "button.label",
+              "w": 120,
+              "h": 33,
+              "text": "Your footage"
+            },
+            {
+              "sel": "button.btn",
+              "w": 103,
+              "h": 33,
+              "text": "Hide detections"
+            },
+            {
+              "sel": "button.btn",
+              "w": 39,
+              "h": 36,
+              "text": "▶"
+            },
+            {
+              "sel": "input",
+              "w": 595,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "button.btn.btn-primary",
+              "w": 117,
+              "h": 44,
+              "text": "Analyse flight"
+            },
+            {
+              "sel": "select",
+              "w": 685,
+              "h": 34,
+              "text": "Discus 2.0 kg (senior men)Discus"
+            },
+            {
+              "sel": "input",
+              "w": 338,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 338,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 685,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 685,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 685,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 685,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 685,
+              "h": 16,
+              "text": ""
+            }
+          ]
+        },
+        "contrast": {
+          "checked": 26,
+          "failures": [
+            {
+              "sel": "button.label",
+              "ratio": 1,
+              "need": 4.5,
+              "color": "rgb(255, 107, 26)",
+              "bg": "rgb(255,107,26)",
+              "size": 10,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "p",
+              "ratio": 2.81,
+              "need": 4.5,
+              "color": "rgb(77, 90, 94)",
+              "bg": "rgb(6,8,10)",
+              "size": 12,
+              "text": "Training and film analysis, not officiat"
+            }
+          ]
+        },
+        "hierarchy": {
+          "h1Count": 1,
+          "headingCount": 1,
+          "levelSkips": [],
+          "distinctTextSizes": 6,
+          "sizeHistogram": {
+            "10": 13,
+            "11": 3,
+            "12": 7,
+            "13": 1,
+            "14": 1,
+            "34": 1
+          },
+          "largestText": {
+            "px": 34,
+            "sel": "h1.display"
+          },
+          "largestIsH1": true
+        },
+        "spacing": {
+          "distinctValues": 17,
+          "offGridCount": 49,
+          "offGridPct": 71,
+          "topValues": [
+            "8px x12",
+            "13px x9",
+            "7px x8",
+            "10px x6",
+            "5px x5",
+            "6px x5",
+            "11px x5",
+            "15px x4",
+            "16px x4",
+            "12px x3",
+            "14px x2",
+            "4px x1"
+          ]
+        },
+        "orphans": [],
+        "images": {
+          "total": 0,
+          "issues": []
+        },
+        "cls": 0.0345,
+        "shifts": [
+          0.0173,
+          0.0173
+        ],
+        "fonts": [
+          "ui-sans-serif",
+          "ui-monospace"
+        ]
+      },
+      "screenshot": "tablet-768.png",
+      "truncated": false
+    },
+    {
+      "viewport": {
+        "name": "mobile-390",
+        "width": 390,
+        "height": 844,
+        "dpr": 2
+      },
+      "probe": {
+        "viewport": {
+          "width": 390,
+          "height": 844,
+          "dpr": 2
+        },
+        "viewportMeta": {
+          "present": true,
+          "content": "width=device-width, initial-scale=1"
+        },
+        "document": {
+          "scrollWidth": 375,
+          "clientWidth": 375,
+          "scrollHeight": 1453,
+          "title": "SECTOR — Throws Flight Analysis"
+        },
+        "overflow": {
+          "horizontal": false,
+          "offenders": []
+        },
+        "tapTargets": {
+          "checked": 14,
+          "failures": [
+            {
+              "sel": "button.label",
+              "w": 138,
+              "h": 31,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "button.label",
+              "w": 120,
+              "h": 31,
+              "text": "Your footage"
+            },
+            {
+              "sel": "button.btn",
+              "w": 103,
+              "h": 33,
+              "text": "Hide detections"
+            },
+            {
+              "sel": "button.btn",
+              "w": 39,
+              "h": 36,
+              "text": "▶"
+            },
+            {
+              "sel": "input",
+              "w": 217,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "button.btn.btn-primary",
+              "w": 117,
+              "h": 44,
+              "text": "Analyse flight"
+            },
+            {
+              "sel": "select",
+              "w": 307,
+              "h": 34,
+              "text": "Discus 2.0 kg (senior men)Discus"
+            },
+            {
+              "sel": "input",
+              "w": 149,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 149,
+              "h": 36,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 307,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 307,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 307,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 307,
+              "h": 16,
+              "text": ""
+            },
+            {
+              "sel": "input",
+              "w": 307,
+              "h": 16,
+              "text": ""
+            }
+          ]
+        },
+        "contrast": {
+          "checked": 26,
+          "failures": [
+            {
+              "sel": "button.label",
+              "ratio": 1,
+              "need": 4.5,
+              "color": "rgb(255, 107, 26)",
+              "bg": "rgb(255,107,26)",
+              "size": 10,
+              "text": "Synthetic venue"
+            },
+            {
+              "sel": "p",
+              "ratio": 2.81,
+              "need": 4.5,
+              "color": "rgb(77, 90, 94)",
+              "bg": "rgb(6,8,10)",
+              "size": 12,
+              "text": "Training and film analysis, not officiat"
+            }
+          ]
+        },
+        "hierarchy": {
+          "h1Count": 1,
+          "headingCount": 1,
+          "levelSkips": [],
+          "distinctTextSizes": 6,
+          "sizeHistogram": {
+            "10": 13,
+            "11": 3,
+            "12": 7,
+            "13": 1,
+            "14": 1,
+            "34": 1
+          },
+          "largestText": {
+            "px": 34,
+            "sel": "h1.display"
+          },
+          "largestIsH1": true
+        },
+        "spacing": {
+          "distinctValues": 17,
+          "offGridCount": 49,
+          "offGridPct": 71,
+          "topValues": [
+            "8px x12",
+            "13px x9",
+            "7px x8",
+            "10px x6",
+            "5px x5",
+            "6px x5",
+            "11px x5",
+            "15px x4",
+            "16px x4",
+            "12px x3",
+            "14px x2",
+            "4px x1"
+          ]
+        },
+        "orphans": [],
+        "images": {
+          "total": 0,
+          "issues": []
+        },
+        "cls": 0.0247,
+        "shifts": [
+          0.0082,
+          0.0082,
+          0.0082
+        ],
+        "fonts": [
+          "ui-sans-serif",
+          "ui-monospace"
+        ]
+      },
+      "screenshot": "mobile-390.png",
+      "truncated": false
+    }
+  ]
+}
