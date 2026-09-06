@@ -7,8 +7,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "accuracy": "vitest run src/lib/accuracy.test.ts --reporter=verbose"
   },
   "dependencies": {
     "next": "^16.1.6",
@@ -23,5 +25,6 @@
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
-  }
+  },
+  "license": "MIT"
 }
