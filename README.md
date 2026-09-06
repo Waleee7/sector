@@ -2,6 +2,8 @@
 
 **Monocular flight tracking and release analytics for the throwing events.**
 
+**[Live demo → sector-ochre.vercel.app](https://sector-ochre.vercel.app)** · no signup, no upload — the demo runs a physically simulated throw you design yourself.
+
 One camera. No markers, no sensors, nothing uploaded. Point a phone at the ring, click four points on the rim, and SECTOR recovers the release velocity, release angle, release height, sector deviation and Rule 32 distance — from the arc itself, using gravity as the ruler and the implement's own aerodynamics as the model.
 
 ![The SECTOR studio](docs/studio.png)
