@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * SECTOR studio.
+ *
+ * Three modes, one pipeline. RANGE renders a throw you design, ARCHIVE renders
+ * a reconstruction of a published mark, TRACK takes your own video - and all
+ * three hand their frames to the same `analyze()` behind the same FrameSource
+ * interface. There is no demo code path that could quietly diverge from the
+ * real one, which is the only reason the error numbers mean anything.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Stage from "./Stage";
 import Metrics from "./Metrics";
@@ -7,6 +17,7 @@ import PlanView from "./PlanView";
 import ProfileChart from "./ProfileChart";
 import { buildScene, CENTRELINE_DEG, CIRCLE_CENTRE, DEMO_THROW, type SynthOptions } from "@/lib/synth";
 import { IMPLEMENTS, implementById } from "@/lib/physics";
+import { CASE_FILES, caseFileById, reconstruct, type CaseFile } from "@/lib/casefiles";
 import {
   solveCamera,
   calibrationResidualPx,
@@ -18,7 +29,7 @@ import { CIRCLE_DIAMETER_M, type Vec2 } from "@/lib/geometry";
 import { extractFrames, type ExtractedClip } from "@/lib/video";
 import type { WorkerRequest, WorkerResponse } from "@/lib/worker";
 
-type Mode = "demo" | "upload";
+type Mode = "range" | "archive" | "track";
 
 type Result = Extract<WorkerResponse, { kind: "done" }>;
 
@@ -29,9 +40,17 @@ const RIM_LABELS = [
   "Right edge of the circle rim",
 ];
 
+const MODE_LABEL: Record<Mode, string> = {
+  range: "Range",
+  archive: "Archive",
+  track: "Track",
+};
+
 export default function Studio() {
-  const [mode, setMode] = useState<Mode>("demo");
+  const [mode, setMode] = useState<Mode>("archive");
   const [opts, setOpts] = useState<SynthOptions>(DEMO_THROW);
+  const [caseId, setCaseId] = useState<string>(CASE_FILES[0].id);
+  const [archiveWind, setArchiveWind] = useState(0);
   const [conditions, setConditions] = useState<Conditions>({
     headwindMs: DEMO_THROW.headwindMs,
     altitudeM: 300,
@@ -50,16 +69,60 @@ export default function Studio() {
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [showDetections, setShowDetections] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
 
   const workerRef = useRef<Worker | null>(null);
 
-  const scene = useMemo(
-    () => (mode === "demo" ? buildScene({ ...opts, implementId, headwindMs: conditions.headwindMs }) : null),
-    [mode, opts, implementId, conditions.headwindMs],
+  const activeCase = useMemo(() => caseFileById(caseId) ?? CASE_FILES[0], [caseId]);
+
+  /**
+   * The reconstruction: the release this model requires to produce the published
+   * mark, in that venue's air, with no wind. It is what the physics demands, not
+   * a measurement of the athlete - which is why the wind slider then moves the
+   * venue rather than the reconstruction.
+   */
+  const recon = useMemo(() => reconstruct(activeCase), [activeCase]);
+
+  const archiveOpts: SynthOptions = useMemo(
+    () => ({
+      ...DEMO_THROW,
+      implementId: activeCase.implementId,
+      releaseSpeedMs: recon.release.speed,
+      releaseAngleDeg: recon.release.angleDeg,
+      releaseHeightM: recon.release.heightM,
+      attitudeDeg: recon.attitudeDeg,
+      headwindMs: archiveWind,
+      // Straight down the centreline: the mark is public, the line it was thrown
+      // on is not, and inventing one would be inventing data.
+      deviationDeg: 0,
+      altitudeM: activeCase.altitudeM,
+      tempC: activeCase.tempC,
+      seed: 4242,
+    }),
+    [activeCase, recon, archiveWind],
   );
 
+  const synthOpts: SynthOptions | null =
+    mode === "range"
+      ? { ...opts, implementId, headwindMs: conditions.headwindMs }
+      : mode === "archive"
+        ? archiveOpts
+        : null;
+
+  const scene = useMemo(() => (synthOpts ? buildScene(synthOpts) : null), [synthOpts]);
+
+  /** Conditions the solver is told about. They must match the venue's own air. */
+  const solveConditions: Conditions = useMemo(() => {
+    if (mode === "archive") {
+      return { headwindMs: archiveWind, altitudeM: activeCase.altitudeM, tempC: activeCase.tempC };
+    }
+    return conditions;
+  }, [mode, archiveWind, activeCase, conditions]);
+
+  const activeImplementId = mode === "archive" ? activeCase.implementId : implementId;
+
   const source = useMemo(() => {
-    if (mode === "demo" && scene) {
+    if (scene) {
       return {
         width: scene.width,
         height: scene.height,
@@ -78,10 +141,10 @@ export default function Studio() {
       };
     }
     return null;
-  }, [mode, scene, clip]);
+  }, [scene, clip]);
 
   const calibration: Calibration | null = useMemo(() => {
-    if (mode === "demo" && scene) {
+    if (scene) {
       return {
         points: scene.calibration,
         imageWidth: scene.width,
@@ -114,7 +177,7 @@ export default function Studio() {
       };
     }
     return null;
-  }, [mode, scene, clip, picks, implementId]);
+  }, [scene, clip, picks, implementId]);
 
   const camera = useMemo(() => (calibration ? solveCamera(calibration) : null), [calibration]);
   const calResidual = useMemo(
@@ -122,10 +185,10 @@ export default function Studio() {
     [calibration, camera],
   );
 
-  // Reset the timeline whenever the underlying footage changes.
   useEffect(() => {
     setFrame(0);
     setResult(null);
+    setPlaying(false);
   }, [source]);
 
   useEffect(() => {
@@ -172,13 +235,13 @@ export default function Studio() {
       }
     };
 
-    if (mode === "demo" && scene) {
+    if (synthOpts) {
       const req: WorkerRequest = {
         kind: "demo",
-        opts: scene.opts,
+        opts: synthOpts,
         calibration,
-        implementId,
-        conditions,
+        implementId: activeImplementId,
+        conditions: solveConditions,
       };
       worker.postMessage(req);
     } else if (clip) {
@@ -190,12 +253,12 @@ export default function Studio() {
         fps: clip.fps,
         frames: buffers,
         calibration,
-        implementId,
-        conditions,
+        implementId: activeImplementId,
+        conditions: solveConditions,
       };
       worker.postMessage(req, buffers);
     }
-  }, [calibration, source, mode, scene, clip, implementId, conditions]);
+  }, [calibration, source, synthOpts, clip, activeImplementId, solveConditions]);
 
   const onFile = useCallback(async (file: File) => {
     setUploadError(null);
@@ -214,93 +277,111 @@ export default function Studio() {
   }, []);
 
   const m: ThrowMetrics | null = result?.metrics ?? null;
-  const spec = implementById(implementId);
+  const spec = implementById(activeImplementId);
+
+  const sourceLabel =
+    mode === "archive"
+      ? `ARCHIVE · ${activeCase.athlete.toUpperCase()}`
+      : mode === "range"
+        ? "SYNTHETIC RANGE"
+        : "YOUR FOOTAGE";
 
   return (
-    <main className="sector-bg" style={{ minHeight: "100vh", padding: "26px 18px 70px" }}>
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+    <main className="field" style={{ padding: "26px 18px 72px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", position: "relative", zIndex: 1 }}>
         <Header />
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.55fr) minmax(0, 1fr)",
-            gap: 16,
-            marginTop: 22,
-          }}
-          className="sector-grid"
-        >
-          {/* ---------------- Stage column ---------------- */}
-          <section className="panel" style={{ padding: 14, minWidth: 0 }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-              <Seg active={mode === "demo"} onClick={() => setMode("demo")}>
-                Synthetic venue
-              </Seg>
-              <Seg active={mode === "upload"} onClick={() => setMode("upload")}>
-                Your footage
-              </Seg>
-              <div style={{ flex: 1 }} />
-              <button className="btn" onClick={() => setShowDetections((s) => !s)} style={{ padding: "7px 12px", fontSize: 11 }}>
-                {showDetections ? "Hide" : "Show"} detections
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "22px 0 14px" }}>
+          <div className="tabbar" role="tablist" aria-label="Source mode">
+            {(["archive", "range", "track"] as Mode[]).map((k) => (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={mode === k}
+                data-on={mode === k}
+                className="tab"
+                onClick={() => setMode(k)}
+              >
+                {MODE_LABEL[k]}
               </button>
-            </div>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <Toggle on={showDetections} onClick={() => setShowDetections((s) => !s)}>
+            Candidates
+          </Toggle>
+          <Toggle on={showGrid} onClick={() => setShowGrid((s) => !s)}>
+            Range grid
+          </Toggle>
+        </div>
 
+        <p className="label label-dim" style={{ margin: "0 0 16px", letterSpacing: "0.14em", lineHeight: 1.7 }}>
+          {mode === "archive"
+            ? "Published marks, reconstructed from the physics and re-measured by the tracker"
+            : mode === "range"
+              ? "Design a release · the venue renders it · the analyser sees only pixels"
+              : "Your video, decoded and analysed in this tab · nothing is uploaded"}
+        </p>
+
+        <div className="studio-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.62fr) minmax(0, 1fr)", gap: 16 }}>
+          {/* ---------------- Stage ---------------- */}
+          <section className="plate plate-lit plate-rule boot" style={{ padding: 14, minWidth: 0, alignSelf: "start" }}>
             {source ? (
               <>
                 <Stage
                   width={source.width}
                   height={source.height}
                   frame={frame}
+                  fps={source.fps}
                   getGray={source.getGray}
                   blobs={showDetections ? (result?.blobs ?? null) : null}
                   inliers={result?.inliers ?? null}
                   camera={camera}
                   path={m?.path ?? null}
+                  flightTimeS={m?.flightTimeS ?? null}
                   releaseWorld={m?.releaseWorld ?? null}
                   landingWorld={m?.landingWorld ?? null}
                   showDetections={showDetections}
-                  calibrationPoints={mode === "upload" ? picks : undefined}
+                  showGrid={showGrid}
+                  analysing={running}
+                  analysisStage={progress?.stage ?? null}
+                  confidence={m?.confidence ?? null}
+                  reprojectionRmsPx={m?.reprojectionRmsPx ?? null}
+                  sourceLabel={sourceLabel}
+                  implementLabel={spec.label}
+                  calibrationPoints={mode === "track" ? picks : undefined}
                   onPick={
-                    mode === "upload" && picks.length < 4
-                      ? (p) => setPicks((prev) => [...prev, p])
-                      : undefined
+                    mode === "track" && picks.length < 4 ? (p) => setPicks((prev) => [...prev, p]) : undefined
                   }
                 />
 
-                <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 11 }}>
-                  <button className="btn" style={{ padding: "7px 13px" }} onClick={() => setPlaying((p) => !p)}>
-                    {playing ? "❚❚" : "▶"}
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={source.frameCount - 1}
-                    value={frame}
-                    onChange={(e) => {
-                      setPlaying(false);
-                      setFrame(Number(e.target.value));
-                    }}
-                  />
-                  <span className="num" style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                    {(frame / source.fps).toFixed(2)}s
-                  </span>
-                </div>
+                <Transport
+                  playing={playing}
+                  frame={frame}
+                  frameCount={source.frameCount}
+                  fps={source.fps}
+                  onToggle={() => setPlaying((p) => !p)}
+                  onSeek={(f) => {
+                    setPlaying(false);
+                    setFrame(f);
+                  }}
+                />
 
-                <div className="hairline" style={{ marginTop: 13, paddingTop: 12 }}>
-                  {mode === "upload" && picks.length < 4 ? (
+                <div className="hair" style={{ marginTop: 13, paddingTop: 13 }}>
+                  {mode === "track" && picks.length < 4 ? (
                     <CalibrationPrompt index={picks.length} onUndo={() => setPicks((p) => p.slice(0, -1))} />
                   ) : (
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <button className="btn btn-primary" onClick={run} disabled={running || !calibration}>
-                        {running ? "Analysing…" : "Analyse flight"}
+                        {running ? "Analysing…" : "Run tracker"}
                       </button>
-                      {mode === "upload" && (
-                        <button className="btn" style={{ padding: "9px 14px", fontSize: 12 }} onClick={() => setPicks([])}>
+                      {mode === "track" && (
+                        <button className="btn" onClick={() => setPicks([])}>
                           Re-calibrate
                         </button>
                       )}
                       {calResidual !== null && isFinite(calResidual) && (
-                        <span className="num" style={{ fontSize: 11, color: calResidual > 3 ? "var(--warn)" : "var(--muted)" }}>
+                        <span className="num" style={{ fontSize: 11, color: calResidual > 3 ? "var(--gold)" : "var(--muted)" }}>
                           calibration residual {calResidual.toFixed(2)} px
                         </span>
                       )}
@@ -308,82 +389,94 @@ export default function Studio() {
                   )}
 
                   {progress && (
-                    <div style={{ marginTop: 12 }}>
+                    <div style={{ marginTop: 13 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span className="label">{progress.stage}</span>
+                        <span className="label" style={{ color: "var(--chrome)" }}>
+                          {progress.stage}
+                        </span>
                         <span className="num" style={{ fontSize: 10, color: "var(--muted)" }}>
                           {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
                         </span>
                       </div>
-                      <div style={{ height: 3, background: "var(--ink-2)", borderRadius: 2, overflow: "hidden", position: "relative" }}>
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${(progress.done / Math.max(1, progress.total)) * 100}%`,
-                            background: "var(--signal)",
-                            transition: "width 200ms linear",
-                          }}
-                        />
-                      </div>
+                      <div className="scanbar" />
                     </div>
                   )}
 
-                  {result && (
-                    <div className="num" style={{ fontSize: 10.5, color: "var(--muted-2)", marginTop: 11, lineHeight: 1.7 }}>
-                      {result.blobCount} candidate blobs · threshold {result.thresholdUsed} ·{" "}
-                      {result.hypothesisCount} hypotheses · {result.rejectedHypotheses.length} rejected by physics ·{" "}
-                      {result.inliers.length} frames on the arc · {(result.elapsedMs / 1000).toFixed(1)}s
-                    </div>
-                  )}
+                  {result && <PipelineLog r={result} />}
                 </div>
+
+                {m && (
+                  <div className="hair settle" style={{ marginTop: 14, paddingTop: 14 }}>
+                    <PanelTitle>Plan view</PanelTitle>
+                    <PlanView
+                      landing={{ x: m.landingWorld.x, y: m.landingWorld.y }}
+                      circleCentre={calibration?.circleCentre ?? { x: 0, y: 0 }}
+                      centrelineDeg={calibration?.centrelineDeg ?? 0}
+                      officialDistanceM={m.officialDistanceM}
+                      deviationDeg={m.sectorDeviationDeg}
+                      legal={m.legalSector}
+                    />
+                  </div>
+                )}
               </>
             ) : (
               <Dropzone onFile={onFile} decoding={decoding} error={uploadError} />
             )}
           </section>
 
-          {/* ---------------- Control column ---------------- */}
-          <section style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-            <div className="panel" style={{ padding: 15 }}>
-              <div className="label" style={{ marginBottom: 12 }}>
-                Implement & conditions
-              </div>
-              <Field label="Implement">
-                <select value={implementId} onChange={(e) => setImplementId(e.target.value)}>
-                  {IMPLEMENTS.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-                <Field label="Headwind m/s">
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={conditions.headwindMs}
-                    onChange={(e) => setConditions((c) => ({ ...c, headwindMs: Number(e.target.value) }))}
-                  />
-                </Field>
-                <Field label="Temp °C">
-                  <input
-                    type="number"
-                    value={conditions.tempC}
-                    onChange={(e) => setConditions((c) => ({ ...c, tempC: Number(e.target.value) }))}
-                  />
-                </Field>
-              </div>
-            </div>
+          {/* ---------------- Rail ---------------- */}
+          <section style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0, alignSelf: "start" }}>
+            {mode === "archive" && (
+              <ArchivePanel
+                cases={CASE_FILES}
+                active={activeCase}
+                onSelect={setCaseId}
+                recon={recon}
+                wind={archiveWind}
+                onWind={setArchiveWind}
+                venueDistanceM={scene?.truth.officialDistanceM ?? null}
+                measuredM={m?.officialDistanceM ?? null}
+              />
+            )}
 
-            {mode === "demo" && (
-              <div className="panel" style={{ padding: 15 }}>
-                <div className="label" style={{ marginBottom: 4 }}>
-                  Ground truth — design a throw
+            {mode !== "archive" && (
+              <div className="plate" style={{ padding: 15 }}>
+                <PanelTitle>Implement &amp; conditions</PanelTitle>
+                <Field label="Implement">
+                  <select value={implementId} onChange={(e) => setImplementId(e.target.value)}>
+                    {IMPLEMENTS.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <Field label="Headwind m/s">
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={conditions.headwindMs}
+                      onChange={(e) => setConditions((c) => ({ ...c, headwindMs: Number(e.target.value) }))}
+                    />
+                  </Field>
+                  <Field label="Temp °C">
+                    <input
+                      type="number"
+                      value={conditions.tempC}
+                      onChange={(e) => setConditions((c) => ({ ...c, tempC: Number(e.target.value) }))}
+                    />
+                  </Field>
                 </div>
-                <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 13px" }}>
-                  Set a release, and the venue simulates and renders it. The analyser then sees only
-                  pixels — no access to these values — so the error it reports is real.
+              </div>
+            )}
+
+            {mode === "range" && (
+              <div className="plate" style={{ padding: 15 }}>
+                <PanelTitle>Ground truth — design a throw</PanelTitle>
+                <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.65, margin: "0 0 14px" }}>
+                  Set a release and the venue simulates and renders it. The analyser sees only pixels —
+                  no access to these values — so the error it reports is real.
                 </p>
                 <Slider label="Release velocity" unit="m/s" min={14} max={30} step={0.1} value={opts.releaseSpeedMs}
                   onChange={(v) => setOpts((o) => ({ ...o, releaseSpeedMs: v }))} />
@@ -400,30 +493,15 @@ export default function Studio() {
               </div>
             )}
 
-            {m && (
-              <div className="panel" style={{ padding: 15 }}>
-                <div className="label" style={{ marginBottom: 10 }}>
-                  Plan view
-                </div>
-                <PlanView
-                  landing={{ x: m.landingWorld.x, y: m.landingWorld.y }}
-                  circleCentre={calibration?.circleCentre ?? { x: 0, y: 0 }}
-                  centrelineDeg={calibration?.centrelineDeg ?? 0}
-                  officialDistanceM={m.officialDistanceM}
-                  deviationDeg={m.sectorDeviationDeg}
-                  legal={m.legalSector}
-                />
-              </div>
-            )}
           </section>
         </div>
 
-        {/* ---------------- Results ---------------- */}
+        {/* ---------------- Readout ---------------- */}
         {m && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginTop: 16 }}>
-            <div className="panel" style={{ padding: 17 }}>
+          <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
+            <div className="plate plate-rule settle" style={{ padding: 17 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 15, flexWrap: "wrap" }}>
-                <div className="label">Measurement</div>
+                <PanelTitle inline>Measurement</PanelTitle>
                 <Badge confidence={m.confidence} />
                 <span className="num" style={{ fontSize: 10.5, color: "var(--muted-2)" }}>
                   {m.model === "aerodynamic" ? "aerodynamic flight model" : "ballistic fallback"} ·{" "}
@@ -435,14 +513,12 @@ export default function Studio() {
                 speedRange={result?.speedRange ?? null}
                 distanceRange={result?.distanceRange ?? null}
                 heightRange={result?.heightRange ?? null}
-                truth={mode === "demo" && scene ? scene.truth : null}
+                truth={scene ? scene.truth : null}
               />
             </div>
 
-            <div className="panel" style={{ padding: 17 }}>
-              <div className="label" style={{ marginBottom: 12 }}>
-                Flight profile
-              </div>
+            <div className="plate" style={{ padding: 17 }}>
+              <PanelTitle>Flight profile</PanelTitle>
               <ProfileChart
                 path={m.path}
                 release={m.releaseWorld}
@@ -455,34 +531,14 @@ export default function Studio() {
           </div>
         )}
 
-        {result && !m && (
-          <div className="panel" style={{ padding: 17, marginTop: 16 }}>
-            <div className="label" style={{ color: "var(--warn)" }}>
-              No throw found
-            </div>
-            <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7, marginTop: 9 }}>
-              {result.hypothesisCount} arc hypotheses were proposed and every one was rejected as
-              physically impossible. That is the system refusing to invent a measurement rather than
-              reporting a bird.
-            </p>
-            {result.rejectedHypotheses.length > 0 && (
-              <ul style={{ margin: "10px 0 0", paddingLeft: 17 }}>
-                {result.rejectedHypotheses.map((r, i) => (
-                  <li key={i} className="num" style={{ fontSize: 11, color: "var(--muted-2)", lineHeight: 1.8 }}>
-                    {r.inliers} frames — {r.reason}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+        {result && !m && <NoThrow r={result} />}
 
         <Footer />
       </div>
 
       <style>{`
-        @media (max-width: 900px) {
-          .sector-grid { grid-template-columns: minmax(0, 1fr) !important; }
+        @media (max-width: 940px) {
+          .studio-grid { grid-template-columns: minmax(0, 1fr) !important; }
         }
       `}</style>
     </main>
@@ -493,30 +549,316 @@ export default function Studio() {
 
 function Header() {
   return (
-    <header>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 13, flexWrap: "wrap" }}>
-        <h1 className="display" style={{ fontSize: 34, margin: 0, letterSpacing: "-0.045em" }}>
+    <header className="boot">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+        <h1 className="wordmark" style={{ fontSize: "clamp(38px, 7vw, 62px)", margin: 0, lineHeight: 0.92 }}>
           SECTOR
         </h1>
         <span className="label" style={{ color: "var(--signal)" }}>
-          v0 · throws flight analysis
+          monocular flight tracking
         </span>
       </div>
-      <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.65, margin: "10px 0 0", maxWidth: 720 }}>
+      <p style={{ fontSize: 14.5, color: "var(--muted)", lineHeight: 1.7, margin: "13px 0 0", maxWidth: 740 }}>
         One camera, no markers, nothing uploaded. Release velocity, release angle, release height and
         Rule&nbsp;32 distance, solved from the arc itself — using gravity as the ruler and the
         implement&apos;s own aerodynamics as the model.
       </p>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 14 }}>
+        <Stat k="Pipeline" v="Detect → RANSAC → Solve → Integrate" />
+        <Stat k="Runtime deps" v="next · react · react-dom" />
+        <Stat k="Video leaves the tab" v="Never" />
+      </div>
     </header>
+  );
+}
+
+function Stat({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <div className="label label-dim" style={{ fontSize: 9 }}>
+        {k}
+      </div>
+      <div className="num" style={{ fontSize: 11.5, color: "var(--chrome)", marginTop: 3 }}>
+        {v}
+      </div>
+    </div>
+  );
+}
+
+function PanelTitle({ children, inline }: { children: React.ReactNode; inline?: boolean }) {
+  return (
+    <div
+      className="label"
+      style={{
+        color: "var(--chrome)",
+        marginBottom: inline ? 0 : 12,
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+      }}
+    >
+      <span className="dot" style={{ color: "var(--chrome)" }} />
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      className="tab"
+      data-on={on}
+      style={{ border: "1px solid var(--line)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Transport({
+  playing,
+  frame,
+  frameCount,
+  fps,
+  onToggle,
+  onSeek,
+}: {
+  playing: boolean;
+  frame: number;
+  frameCount: number;
+  fps: number;
+  onToggle: () => void;
+  onSeek: (f: number) => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+      <button className="btn" style={{ minWidth: 52 }} onClick={onToggle} aria-label={playing ? "Pause" : "Play"}>
+        {playing ? "❚❚" : "▶"}
+      </button>
+      <input
+        type="range"
+        aria-label="Timeline"
+        min={0}
+        max={Math.max(0, frameCount - 1)}
+        value={frame}
+        onChange={(e) => onSeek(Number(e.target.value))}
+      />
+      <span className="num" style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+        {(frame / fps).toFixed(2)}s
+      </span>
+    </div>
+  );
+}
+
+function PipelineLog({ r }: { r: Result }) {
+  const rows: [string, string][] = [
+    ["blobs", `${r.blobCount} @ threshold ${r.thresholdUsed}`],
+    ["hypotheses", `${r.hypothesisCount} proposed`],
+    ["gate", `${r.rejectedHypotheses.length} rejected by physics`],
+    ["arc", `${r.inliers.length} frames accepted`],
+    ["elapsed", `${(r.elapsedMs / 1000).toFixed(1)}s`],
+  ];
+  return (
+    <div style={{ marginTop: 13, display: "flex", flexWrap: "wrap", gap: "4px 20px" }}>
+      {rows.map(([k, v]) => (
+        <span key={k} className="num" style={{ fontSize: 10.5, color: "var(--muted-2)" }}>
+          <span style={{ color: "var(--chrome)", opacity: 0.65 }}>{k}</span> {v}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Archive ---------------- */
+
+function ArchivePanel({
+  cases,
+  active,
+  onSelect,
+  recon,
+  wind,
+  onWind,
+  venueDistanceM,
+  measuredM,
+}: {
+  cases: CaseFile[];
+  active: CaseFile;
+  onSelect: (id: string) => void;
+  recon: ReturnType<typeof reconstruct>;
+  wind: number;
+  onWind: (v: number) => void;
+  venueDistanceM: number | null;
+  measuredM: number | null;
+}) {
+  return (
+    <>
+      <div className="plate plate-lit" style={{ padding: 15 }}>
+        <PanelTitle>Case files</PanelTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {cases.map((c) => {
+            const on = c.id === active.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => onSelect(c.id)}
+                style={{
+                  textAlign: "left",
+                  cursor: "pointer",
+                  padding: "10px 11px",
+                  minHeight: 44,
+                  background: on ? "rgba(79,227,255,0.10)" : "transparent",
+                  border: `1px solid ${on ? "var(--line-strong)" : "transparent"}`,
+                  color: "inherit",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: on ? "var(--chalk)" : "var(--muted)",
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {c.athlete}
+                    {c.personal && (
+                      <span className="label" style={{ color: "var(--signal)", marginLeft: 7, fontSize: 8.5 }}>
+                        author
+                      </span>
+                    )}
+                  </span>
+                  <span className="num display" style={{ fontSize: 14, color: on ? "var(--signal)" : "var(--muted-2)" }}>
+                    {c.markM.toFixed(2)}
+                  </span>
+                </div>
+                <div className="label label-dim" style={{ fontSize: 8.5, marginTop: 4, letterSpacing: "0.12em" }}>
+                  {c.event}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="plate" style={{ padding: 15 }}>
+        <PanelTitle>Reconstruction</PanelTitle>
+        <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.65, margin: "0 0 12px" }}>
+          {active.note}
+        </p>
+
+        <div className="kv">
+          <span className="label">Venue</span>
+          <span className="num" style={{ fontSize: 11, color: "var(--chalk)", textAlign: "right" }}>
+            {active.venue}
+          </span>
+        </div>
+        <div className="kv">
+          <span className="label">Date</span>
+          <span className="num" style={{ fontSize: 11, color: "var(--chalk)" }}>
+            {active.date}
+          </span>
+        </div>
+        <div className="kv">
+          <span className="label">Published mark</span>
+          <span className="num display" style={{ fontSize: 15, color: "var(--gold)" }}>
+            {active.markM.toFixed(2)} m
+          </span>
+        </div>
+        <div className="kv">
+          <span className="label">Release required</span>
+          <span className="num display" style={{ fontSize: 15, color: "var(--verify)" }}>
+            {recon.release.speed.toFixed(2)} m/s
+          </span>
+        </div>
+        <div className="kv">
+          <span className="label">At angle</span>
+          <span className="num" style={{ fontSize: 12, color: "var(--chalk)" }}>
+            {recon.release.angleDeg.toFixed(1)}° · plate {recon.attitudeDeg.toFixed(0)}°
+          </span>
+        </div>
+        <div className="kv">
+          <span className="label">Lift is worth</span>
+          <span className="num" style={{ fontSize: 12, color: "var(--signal)" }}>
+            +{(active.markM - recon.vacuumRangeM).toFixed(1)} m over vacuum
+          </span>
+        </div>
+
+        <div className="hair" style={{ marginTop: 13, paddingTop: 13 }}>
+          <Slider
+            label="Venue headwind"
+            unit="m/s"
+            min={-4}
+            max={10}
+            step={0.5}
+            value={wind}
+            onChange={onWind}
+          />
+          <p style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 12px" }}>
+            The release is fixed. Only the air moves — and a discus is a wing, so into a headwind it
+            flies further. This is why athletes travel to Ramona.
+          </p>
+
+          <div className="kv">
+            <span className="label">Venue produced</span>
+            <span className="num" style={{ fontSize: 13, color: "var(--chalk)" }}>
+              {venueDistanceM != null ? `${venueDistanceM.toFixed(2)} m` : "—"}
+            </span>
+          </div>
+          <div className="kv">
+            <span className="label">SECTOR measured</span>
+            <span className="num display" style={{ fontSize: 15, color: measuredM != null ? "var(--signal)" : "var(--muted-2)" }}>
+              {measuredM != null ? `${measuredM.toFixed(2)} m` : "run the tracker"}
+            </span>
+          </div>
+        </div>
+
+        <p style={{ fontSize: 10.5, color: "var(--muted-2)", lineHeight: 1.65, margin: "13px 0 0" }}>
+          This is a reconstruction, not a measurement of the throw. SECTOR solves for the release this
+          model needs to reach a published mark, renders that flight, then measures it back — so the
+          error you see is the tracker&apos;s, not the athlete&apos;s.{" "}
+          <a href={active.source} target="_blank" rel="noopener noreferrer">
+            Source
+          </a>
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Bits ---------------- */
+
+function NoThrow({ r }: { r: Result }) {
+  return (
+    <div className="plate" style={{ padding: 17, marginTop: 16 }}>
+      <div className="label" style={{ color: "var(--gold)" }}>
+        No throw found
+      </div>
+      <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.75, marginTop: 9 }}>
+        {r.hypothesisCount} arc hypotheses were proposed and every one was rejected as physically
+        impossible. That is the system refusing to invent a measurement rather than reporting a bird.
+      </p>
+      {r.rejectedHypotheses.length > 0 && (
+        <ul style={{ margin: "10px 0 0", paddingLeft: 17 }}>
+          {r.rejectedHypotheses.map((x, i) => (
+            <li key={i} className="num" style={{ fontSize: 11, color: "var(--muted-2)", lineHeight: 1.8 }}>
+              {x.inliers} frames — {x.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
 function Footer() {
   return (
-    <footer className="hairline" style={{ marginTop: 30, paddingTop: 17 }}>
-      <p style={{ fontSize: 11.5, color: "var(--muted-2)", lineHeight: 1.75, margin: 0, maxWidth: 760 }}>
-        Training and film analysis, not officiating. SECTOR is not a certified measuring device and
-        does not replace a steel tape or an official&apos;s call. All video is decoded and analysed in
+    <footer className="hair" style={{ marginTop: 34, paddingTop: 18 }}>
+      <p style={{ fontSize: 11.5, color: "var(--muted-2)", lineHeight: 1.8, margin: 0, maxWidth: 790 }}>
+        Training and film analysis, not officiating. SECTOR is not a certified measuring device and does
+        not replace a steel tape or an official&apos;s call. Archive reconstructions are model output
+        from published marks, not measurements of those throws. All video is decoded and analysed in
         your browser — nothing is uploaded to a server.
       </p>
     </footer>
@@ -526,36 +868,14 @@ function Footer() {
 function Badge({ confidence }: { confidence: ThrowMetrics["confidence"] }) {
   const map = {
     high: { c: "var(--verify)", t: "HIGH CONFIDENCE" },
-    medium: { c: "var(--warn)", t: "MEDIUM CONFIDENCE" },
-    low: { c: "var(--bad)", t: "LOW CONFIDENCE" },
+    medium: { c: "var(--gold)", t: "MEDIUM CONFIDENCE" },
+    low: { c: "var(--reject)", t: "LOW CONFIDENCE" },
   } as const;
   const s = map[confidence];
   return (
-    <span
-      className="label"
-      style={{ color: s.c, border: `1px solid ${s.c}`, borderRadius: 20, padding: "3px 9px", fontSize: 9 }}
-    >
+    <span className="label" style={{ color: s.c, border: `1px solid ${s.c}`, padding: "4px 9px", fontSize: 9 }}>
       {s.t}
     </span>
-  );
-}
-
-function Seg({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="label"
-      style={{
-        padding: "7px 13px",
-        borderRadius: 8,
-        cursor: "pointer",
-        border: `1px solid ${active ? "var(--signal)" : "var(--line)"}`,
-        background: active ? "var(--signal-dim)" : "transparent",
-        color: active ? "var(--signal)" : "var(--muted)",
-      }}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -589,13 +909,21 @@ function Slider({
 }) {
   return (
     <div style={{ marginBottom: 13 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
         <span className="label">{label}</span>
         <span className="num" style={{ fontSize: 11.5, color: "var(--chalk)" }}>
           {value.toFixed(step < 1 ? 2 : 0)} {unit}
         </span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
     </div>
   );
 }
@@ -603,18 +931,18 @@ function Slider({
 function CalibrationPrompt({ index, onUndo }: { index: number; onUndo: () => void }) {
   return (
     <div>
-      <div className="label" style={{ color: "var(--warn)" }}>
+      <div className="label" style={{ color: "var(--gold)" }}>
         Calibration — point {index + 1} of 4
       </div>
       <p style={{ fontSize: 12.5, color: "var(--chalk)", lineHeight: 1.65, margin: "8px 0 0" }}>
         Click: <strong>{RIM_LABELS[index]}</strong>
       </p>
-      <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.6, margin: "7px 0 0" }}>
+      <p style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.65, margin: "7px 0 0" }}>
         The circle is a surveyed object of known diameter, so four points on its rim pin the ground
         plane and recover the camera. Scrub to a frame where the rim is clearly visible first.
       </p>
       {index > 0 && (
-        <button className="btn" style={{ marginTop: 11, padding: "7px 12px", fontSize: 11 }} onClick={onUndo}>
+        <button className="btn" style={{ marginTop: 12 }} onClick={onUndo}>
           Undo last point
         </button>
       )}
@@ -641,20 +969,19 @@ function Dropzone({
       }}
       style={{
         border: "1px dashed var(--line-strong)",
-        borderRadius: 12,
-        padding: "54px 24px",
+        padding: "58px 24px",
         textAlign: "center",
         background: "var(--ink-2)",
       }}
     >
-      <div className="display" style={{ fontSize: 17, marginBottom: 9 }}>
+      <div className="display" style={{ fontSize: 18, marginBottom: 10 }}>
         {decoding ?? "Drop a throw video here"}
       </div>
-      <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7, maxWidth: 440, margin: "0 auto 17px" }}>
+      <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.75, maxWidth: 450, margin: "0 auto 18px" }}>
         Film side-on from a tripod with the circle and the whole flight in frame. Keep the camera
         still — the background model assumes it. 60 fps or better is worth the storage.
       </p>
-      <label className="btn" style={{ cursor: "pointer" }}>
+      <label className="btn" style={{ cursor: "pointer", display: "inline-flex" }}>
         Choose video
         <input
           type="file"
@@ -666,9 +993,7 @@ function Dropzone({
           }}
         />
       </label>
-      {error && (
-        <p style={{ fontSize: 12, color: "var(--bad)", marginTop: 15 }}>{error}</p>
-      )}
+      {error && <p style={{ fontSize: 12, color: "var(--reject)", marginTop: 16 }}>{error}</p>}
     </div>
   );
 }

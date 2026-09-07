@@ -49,6 +49,9 @@ export type SynthOptions = {
   deviationDeg: number;
   noise: number;
   seed: number;
+  /** Venue air, which sets the density the lift and drag are computed against. */
+  altitudeM?: number;
+  tempC?: number;
 };
 
 export const DEMO_THROW: SynthOptions = {
@@ -125,7 +128,7 @@ function rng(seed: number): () => number {
 
 export function buildScene(o: SynthOptions = DEMO_THROW): SynthScene {
   const spec = implementById(o.implementId);
-  const rho = airDensity(300, 22);
+  const rho = airDensity(o.altitudeM ?? 300, o.tempC ?? 22);
   const release: ReleaseState = {
     speed: o.releaseSpeedMs,
     angleDeg: o.releaseAngleDeg,
@@ -260,11 +263,70 @@ export function buildScene(o: SynthOptions = DEMO_THROW): SynthScene {
     // are static, so the median background model absorbs them completely.
     for (let y = Math.max(0, Math.floor(horizonY)); y < H; y++) {
       const d = (y - horizonY) / Math.max(1, H - horizonY);
-      const base = 54 + d * 26;
+      const base = 60 + d * 30;
       for (let x = 0; x < W; x++) {
-        const stripe = Math.sin((x / W) * 26 + d * 2.2) > 0 ? 5 : -5;
+        const stripe = Math.sin((x / W) * 26 + d * 2.2) > 0 ? 9 : -9;
         buf[y * W + x] = base + stripe * (0.35 + d * 0.65);
       }
+    }
+
+    // The stand: pale concrete terracing with dark speckle for the crowd.
+    //
+    // Pale rather than dark, and the reason is the detector rather than the
+    // art direction. A discus renders at luma 22; if the terrace sat at the
+    // same tone as the grass the implement would lose contrast every time it
+    // crossed the skyline, and detections would drop out at exactly the two
+    // moments - release and landing - that the solve leans on hardest.
+    //
+    // All of it is static, so the median background model subtracts a crowd of
+    // ten thousand people to zero and the detector never sees a spectator.
+    const standH = H * 0.17;
+    const standTop = Math.max(0, horizonY - standH);
+    for (let y = Math.floor(standTop); y < horizonY; y++) {
+      const f = (y - standTop) / Math.max(1, standH);
+      for (let x = 0; x < W; x++) {
+        const speck = staticHash(x, y) * 44 - 22;
+        // Terrace steps: banding that runs with the rake of the seating.
+        const step = Math.sin(f * 26) > 0 ? 5 : -5;
+        buf[y * W + x] = Math.max(0, Math.min(255, 100 + f * 14 + step + speck * (0.55 + f * 0.55)));
+      }
+    }
+    // Roof lip along the top of the terrace, and stanchions down its face.
+    for (let x = 0; x < W; x++) {
+      for (let k = 0; k < 3; k++) {
+        const y = Math.floor(standTop) + k;
+        if (y >= 0 && y < H) buf[y * W + x] = k === 0 ? 46 : 62;
+      }
+    }
+    for (let x = 0; x < W; x += 34) {
+      for (let y = Math.floor(standTop) + 3; y < horizonY; y++) {
+        if (y >= 0 && y < H) buf[y * W + x] = 64;
+      }
+    }
+    // Floodlight masts on the skyline. Silhouette only - two dark verticals and
+    // a head - but they are what makes a grey band read as a stadium.
+    for (const mx of [Math.round(W * 0.17), Math.round(W * 0.81)]) {
+      const mastTop = Math.max(0, Math.floor(standTop) - Math.round(H * 0.15));
+      for (let y = mastTop; y < standTop; y++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = mx + dx;
+          if (x >= 0 && x < W && y >= 0 && y < H) buf[y * W + x] = dx === 0 ? 52 : 84;
+        }
+      }
+      for (let dx = -9; dx <= 9; dx++) {
+        for (let dy = 0; dy < 5; dy++) {
+          const x = mx + dx;
+          const y = mastTop + dy;
+          if (x >= 0 && x < W && y >= 0 && y < H) buf[y * W + x] = 196;
+        }
+      }
+    }
+    // Rail at the front of the terrace, and its shadow on the grass.
+    for (let x = 0; x < W; x++) {
+      const yr = Math.floor(horizonY) - 1;
+      if (yr >= 0 && yr < H) buf[yr * W + x] = 178;
+      const ys = Math.floor(horizonY) + 1;
+      if (ys >= 0 && ys < H) buf[ys * W + x] = 40;
     }
 
     // Painted lines: sector edges and the circle, so the scene is calibratable
@@ -308,6 +370,29 @@ export function buildScene(o: SynthOptions = DEMO_THROW): SynthScene {
       prevRim = q;
     }
 
+    // The cage. Uprights at 7 m on the bearings a real discus cage occupies -
+    // wide of the sector, never across it - plus the top cable between them.
+    // Static furniture, so the background model absorbs it, but it gives the
+    // frame the silhouette anyone who has stood in a ring will recognise.
+    const cagePosts: (Vec2 | null)[] = [];
+    for (const degOff of [52, 84, 116, 148, -52, -84, -116, -148]) {
+      const a = (degOff * Math.PI) / 180;
+      const foot = project({ x: 7 * Math.cos(a), y: 7 * Math.sin(a), z: 0 });
+      const top = project({ x: 7 * Math.cos(a), y: 7 * Math.sin(a), z: 4.6 });
+      if (foot && top) {
+        drawLine(buf, W, H, foot, top, 158, 0);
+        cagePosts.push(top);
+      } else {
+        cagePosts.push(null);
+      }
+    }
+    for (let i = 0; i < cagePosts.length - 1; i++) {
+      const a = cagePosts[i];
+      const b = cagePosts[i + 1];
+      // Skip the join that would run straight across the throwing sector.
+      if (a && b && Math.abs(a.x - b.x) < W * 0.6) drawLine(buf, W, H, a, b, 132, 0);
+    }
+
     // Athlete: winds up, releases, follows through. Large and non-compact, so
     // mostly filtered by area - but its fragments are honest noise.
     const tt = t - preRollS;
@@ -319,8 +404,18 @@ export function buildScene(o: SynthOptions = DEMO_THROW): SynthScene {
       z: 0.95,
     });
     if (stand) {
-      const headScale = 1400 / Math.max(4, distanceTo(eye, { x: 0, y: 0, z: 1 }));
-      fillEllipse(buf, W, H, stand.x, stand.y, headScale * 0.010, headScale * 0.030, 30);
+      const sc = 1400 / Math.max(4, distanceTo(eye, { x: 0, y: 0, z: 1 }));
+      // Torso, head and a swinging arm. Bigger and less compact than the
+      // implement, so area rejection removes it - but its edges still produce
+      // honest false positives for the trajectory fit to discard.
+      fillEllipse(buf, W, H, stand.x, stand.y, sc * 0.0092, sc * 0.026, 30);
+      fillEllipse(buf, W, H, stand.x, stand.y - sc * 0.031, sc * 0.0062, sc * 0.0072, 26);
+      const armA = { x: stand.x, y: stand.y - sc * 0.012 };
+      const armB = {
+        x: stand.x + Math.cos(phase * 6.5) * sc * 0.019,
+        y: stand.y - sc * 0.012 - Math.sin(phase * 6.5) * sc * 0.012,
+      };
+      drawLine(buf, W, H, armA, armB, 28, 0);
     }
 
     // Bird: constant-velocity crosser. Fits a line, never a parabola - it is
@@ -358,6 +453,19 @@ export function buildScene(o: SynthOptions = DEMO_THROW): SynthScene {
   }
 
   return scene;
+}
+
+/**
+ * Position-only hash, deliberately independent of the frame number.
+ *
+ * Anything textured with this is identical in every frame, which is what makes
+ * a crowd of ten thousand people cost the detector nothing: the median
+ * background sees the same value every time and subtracts it to zero.
+ */
+function staticHash(x: number, y: number): number {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) | 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 function distanceTo(a: Vec3, b: Vec3): number {

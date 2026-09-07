@@ -165,7 +165,8 @@ describe("end-to-end accuracy against ground truth", () => {
 });
 
 describe("robustness", () => {
-  it("still solves a flatter, slower throw", () => {
+  // Rendering the venue twice over plus a full solve runs past the 5s default.
+  it("still solves a flatter, slower throw", { timeout: 20_000 }, () => {
     const scene = buildScene({
       ...DEMO_THROW,
       releaseSpeedMs: 19.5,
