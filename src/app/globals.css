@@ -168,7 +168,15 @@ body {
   background: linear-gradient(96deg, #ffffff 0%, #cfeaf3 42%, var(--chrome) 100%);
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
+  color: #cfeaf3;
+  -webkit-text-fill-color: transparent;
+}
+
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .wordmark {
+    -webkit-text-fill-color: #cfeaf3;
+    background: none;
+  }
 }
 
 /* ---------- motion ---------- */
@@ -324,10 +332,12 @@ a:focus-visible {
 }
 
 .tab {
-  min-height: 38px;
-  padding: 8px 15px;
+  min-height: 44px;
+  padding: 10px 15px;
   border: 0;
-  background: transparent;
+  /* Opaque rather than transparent: a contrast checker that cannot see through
+     to the bar behind reports these as 1:1 and hides real failures. */
+  background: var(--ink-2);
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -343,7 +353,9 @@ a:focus-visible {
 }
 
 .tab[data-on="true"] {
-  background: rgba(79, 227, 255, 0.13);
+  /* The flat equivalent of rgba(79,227,255,0.13) over --ink-2. Opaque so the
+     selected tab has a real, measurable contrast ratio. */
+  background: #0f2833;
   color: var(--chrome);
   box-shadow: inset 0 0 0 1px rgba(79, 227, 255, 0.34);
 }
@@ -370,7 +382,8 @@ input:hover {
 input[type="range"] {
   width: 100%;
   accent-color: var(--signal);
-  height: 26px;
+  /* The track stays thin; the extra height is touch target around it. */
+  height: 44px;
 }
 
 /* Small square status light. */
@@ -403,6 +416,14 @@ a {
   color: var(--chrome);
   text-decoration-color: rgba(79, 227, 255, 0.35);
   text-underline-offset: 3px;
+}
+
+/* Inline links inside body copy still need a thumb-sized hit area. */
+a:not(.btn) {
+  display: inline-block;
+  min-height: 24px;
+  padding: 10px 2px;
+  margin: -10px 0;
 }
 
 ::selection {
