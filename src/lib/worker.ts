@@ -37,6 +37,14 @@ export type WorkerResponse =
       kind: "done";
       metrics: ThrowMetrics | null;
       inliers: { frame: number; x: number; y: number }[];
+      /**
+       * The strongest arc RANSAC found when the physics gate refused all of
+       * them. Drawing it is not a fudge: the pixels really do contain that
+       * parabola, and showing it dimmed with the rejection reason tells you
+       * whether the tracker missed the throw or your calibration is off - which
+       * is exactly the question a blank stage cannot answer.
+       */
+      unverified: { frame: number; x: number; y: number }[];
       blobs: { frame: number; points: Vec2[] }[];
       rejectedHypotheses: { inliers: number; reason: string }[];
       hypothesisCount: number;
@@ -91,6 +99,10 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
       metrics: result.metrics,
       inliers:
         result.trajectory?.inliers.map((p) => ({ frame: p.frame, x: p.x, y: p.y })) ?? [],
+      unverified:
+        result.trajectory || !result.hypotheses.length
+          ? []
+          : result.hypotheses[0].inliers.map((p) => ({ frame: p.frame, x: p.x, y: p.y })),
       blobs: result.candidates.map((c) => ({
         frame: c.frame,
         points: c.blobs.map((b) => ({ x: b.x, y: b.y })),

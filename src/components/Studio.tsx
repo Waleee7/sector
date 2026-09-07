@@ -26,7 +26,7 @@ import {
   type ThrowMetrics,
 } from "@/lib/solve";
 import { CIRCLE_DIAMETER_M, type Vec2 } from "@/lib/geometry";
-import { extractFrames, type ExtractedClip } from "@/lib/video";
+import { extractFrames, frameAtTime, type ExtractedClip } from "@/lib/video";
 import type { WorkerRequest, WorkerResponse } from "@/lib/worker";
 
 type Mode = "range" | "archive" | "track";
@@ -191,8 +191,45 @@ export default function Studio() {
     setPlaying(false);
   }, [source]);
 
+  /** Seek both the timeline and, for uploaded footage, the element itself. */
+  const seekTo = useCallback(
+    (f: number) => {
+      setFrame(f);
+      if (clip && !scene) {
+        const t = clip.timestamps[Math.max(0, Math.min(clip.timestamps.length - 1, f))];
+        if (t != null && isFinite(t)) clip.video.currentTime = t;
+      }
+    },
+    [clip, scene],
+  );
+
   useEffect(() => {
     if (!playing || !source) return;
+
+    // Uploaded footage: the element is the clock. Driving a frame counter
+    // alongside native playback guarantees the overlay drifts off the picture.
+    if (clip && !scene) {
+      const v = clip.video;
+      let raf = 0;
+      const follow = () => {
+        setFrame(frameAtTime(clip.timestamps, v.currentTime));
+        raf = requestAnimationFrame(follow);
+      };
+      const onEnd = () => {
+        v.currentTime = clip.timestamps[0] ?? 0;
+        void v.play().catch(() => setPlaying(false));
+      };
+      v.addEventListener("ended", onEnd);
+      void v.play().catch(() => setPlaying(false));
+      raf = requestAnimationFrame(follow);
+      return () => {
+        cancelAnimationFrame(raf);
+        v.removeEventListener("ended", onEnd);
+        v.pause();
+      };
+    }
+
+    // Synthetic venue: frames are generated on demand, so a counter is the clock.
     let raf = 0;
     let last = performance.now();
     const step = (now: number) => {
@@ -204,9 +241,15 @@ export default function Studio() {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [playing, source]);
+  }, [playing, source, clip, scene]);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
+
+  // The decoded element and its object URL outlive extraction now, so they have
+  // to be let go explicitly.
+  const clipRef = useRef<ExtractedClip | null>(null);
+  clipRef.current = clip;
+  useEffect(() => () => clipRef.current?.release(), []);
 
   const run = useCallback(() => {
     if (!calibration || !source) return;
@@ -226,7 +269,7 @@ export default function Studio() {
         setResult(msg);
         setRunning(false);
         setProgress(null);
-        setFrame(0);
+        seekTo(0);
         setPlaying(true);
       } else {
         setUploadError(msg.message);
@@ -258,15 +301,20 @@ export default function Studio() {
       };
       worker.postMessage(req, buffers);
     }
-  }, [calibration, source, synthOpts, clip, activeImplementId, solveConditions]);
+  }, [calibration, source, synthOpts, clip, activeImplementId, solveConditions, seekTo]);
 
   const onFile = useCallback(async (file: File) => {
     setUploadError(null);
-    setDecoding("Decoding video…");
+    setDecoding("Reading file…");
     setResult(null);
     setPicks([]);
+    setPlaying(false);
+    clipRef.current?.release();
+    setClip(null);
     try {
-      const c = await extractFrames(file, (d, t) => setDecoding(`Decoding video… ${d}/${t} frames`));
+      const c = await extractFrames(file, (d, t) =>
+        setDecoding(`Decoding · ${d}/${t} frames`),
+      );
       setClip(c);
       setDecoding(null);
     } catch (err) {
@@ -277,6 +325,11 @@ export default function Studio() {
   }, []);
 
   const m: ThrowMetrics | null = result?.metrics ?? null;
+  // When the gate refuses everything, still show what RANSAC found - dimmed,
+  // in the reject colour, and labelled. A blank stage cannot tell you whether
+  // the tracker missed the throw or your four clicks were off.
+  const verified = !!result?.inliers.length;
+  const shownInliers = verified ? result!.inliers : (result?.unverified ?? null);
   const spec = implementById(activeImplementId);
 
   const sourceLabel =
@@ -334,8 +387,10 @@ export default function Studio() {
                   frame={frame}
                   fps={source.fps}
                   getGray={source.getGray}
+                  videoEl={!scene && clip ? clip.video : null}
                   blobs={showDetections ? (result?.blobs ?? null) : null}
-                  inliers={result?.inliers ?? null}
+                  inliers={shownInliers}
+                  verified={verified}
                   camera={camera}
                   path={m?.path ?? null}
                   flightTimeS={m?.flightTimeS ?? null}
@@ -363,7 +418,7 @@ export default function Studio() {
                   onToggle={() => setPlaying((p) => !p)}
                   onSeek={(f) => {
                     setPlaying(false);
-                    setFrame(f);
+                    seekTo(f);
                   }}
                 />
 
@@ -839,6 +894,14 @@ function NoThrow({ r }: { r: Result }) {
         {r.hypothesisCount} arc hypotheses were proposed and every one was rejected as physically
         impossible. That is the system refusing to invent a measurement rather than reporting a bird.
       </p>
+      {r.unverified.length > 0 && (
+        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.75, marginTop: 9 }}>
+          The strongest of them — {r.unverified.length} frames — is drawn on the stage in red so you
+          can see what was found. If it traces the implement, the arc is right and the calibration is
+          wrong: re-click the four rim points on a frame where the circle is clearly visible. If it
+          traces something else, the throw was not detected.
+        </p>
+      )}
       {r.rejectedHypotheses.length > 0 && (
         <ul style={{ margin: "10px 0 0", paddingLeft: 17 }}>
           {r.rejectedHypotheses.map((x, i) => (

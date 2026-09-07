@@ -31,7 +31,13 @@ export const HUD = {
   chalk: "#e8edea",
 } as const;
 
-export type LockState = "standby" | "scanning" | "acquiring" | "locked" | "resolved";
+export type LockState =
+  | "standby"
+  | "scanning"
+  | "acquiring"
+  | "locked"
+  | "resolved"
+  | "unverified";
 
 export const MONO = "ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace";
 

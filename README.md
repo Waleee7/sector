@@ -22,7 +22,7 @@ But those numbers are already in the video. A thrown implement is a body in free
 |---|---|
 | **Archive** | Published marks — world records, Olympic golds — reconstructed from the physics and re-measured by the tracker |
 | **Range** | Design a release on sliders. The venue simulates and renders it; the analyser sees only pixels |
-| **Track** | Your own footage, decoded and analysed in the tab |
+| **Track** | Your own footage, decoded and analysed in the tab — the real colour video plays with the overlay on top |
 
 All three hand their frames to the same `analyze()` behind one `FrameSource` interface. There is no demo code path that could quietly diverge from the real one, which is the only reason the error numbers mean anything.
 
@@ -108,6 +108,29 @@ The headwind column is the interesting one. **A discus is a wing: into a headwin
 
 The obvious way to demo a tracker is to run it on Olympic footage. That footage belongs to World Athletics and the IOC, and redistributing it in a public repository would be straightforward infringement — so it is not here, and will not be. The archive ships the marks, the sources and the physics; no video bytes. For a measurement rather than a reconstruction, put your own clip into Track mode.
 
+### Uploading your own clip
+
+Decoding someone else's video in a browser is where this kind of tool usually
+falls over quietly, so the Track path is built to fail loudly instead:
+
+- **The colour video is what you watch.** The analyser works on luma, but the
+  decoded element is kept alive and the overlay is drawn over the real frames.
+  A tracker you cannot check against the footage is a toy.
+- **Codec failures name themselves.** An iPhone clip recorded as HEVC is the
+  most common cause of "it won't load", and the error says so, with the setting
+  to change.
+- **Long clips are strided, not truncated.** Taking the first N frames of a
+  twenty second clip captures the wind-up and misses the throw, and the failure
+  then looks like "no arc found" rather than like the bug it is.
+- **Capture is checked, not assumed.** Playback capture that stalls or
+  under-delivers is redone by seeking; frames are compared so a decoder that
+  repaints the previous picture is caught rather than silently producing a clip
+  that diffs to nothing.
+- **A rejected fit is still drawn.** If RANSAC finds an arc but the physics gate
+  refuses it, the arc is shown in red with the reason — which tells you whether
+  the tracker missed the throw or your four calibration clicks were off. A blank
+  stage cannot answer that.
+
 ## The demo validates itself
 
 The hard part of a tool like this is proving it works when you have no ground truth.
@@ -166,7 +189,7 @@ src/lib/
 ```bash
 npm install
 npm run dev        # http://localhost:3000
-npm test           # 46 tests
+npm test           # 54 tests
 npm run accuracy   # prints the accuracy table above
 npm run typecheck
 npm run build

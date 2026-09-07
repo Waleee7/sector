@@ -49,8 +49,20 @@ export type StageProps = {
   frame: number;
   fps: number;
   getGray: (i: number) => Uint8Array | null;
+  /**
+   * Live decoded element for uploaded footage. When present it is drawn in
+   * colour and the luma buffer is used only by the analyser - a tracker you
+   * cannot watch against the real frames is a toy.
+   */
+  videoEl?: HTMLVideoElement | null;
   blobs: { frame: number; points: Vec2[] }[] | null;
   inliers: TrackedPoint[] | null;
+  /**
+   * False when `inliers` is the arc RANSAC found but the physics gate refused.
+   * The overlay then draws in the reject colour and says so, rather than
+   * dressing an unmeasured track up as a measurement.
+   */
+  verified?: boolean;
   camera: SolvedCamera | null;
   path: Vec3[] | null;
   /** Total flight time, so a path index can be recovered from a frame. */
@@ -131,8 +143,8 @@ function lockStateFor(p: StageProps): { state: LockState; tension: number } {
     const lead = Math.max(1, Math.round(p.fps * 0.5));
     return { state: "acquiring", tension: clamp01(1 - (first - p.frame) / lead) * 0.75 };
   }
-  if (p.frame > last) return { state: "resolved", tension: 1 };
-  return { state: "locked", tension: 1 };
+  if (p.frame > last) return { state: p.verified === false ? "unverified" : "resolved", tension: 1 };
+  return { state: p.verified === false ? "unverified" : "locked", tension: 1 };
 }
 
 function clamp01(v: number): number {
@@ -173,8 +185,15 @@ function draw(
   const u = Math.max(0.85, Math.min(1.9, cssW / 720));
 
   // ---- the footage ------------------------------------------------
-  const gray = p.getGray(p.frame);
-  if (gray && gray.length === p.width * p.height) {
+  const vid = p.videoEl;
+  const videoReady = !!vid && vid.readyState >= 2 && vid.videoWidth > 0;
+  const gray = videoReady ? null : p.getGray(p.frame);
+
+  if (videoReady && vid) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(vid, 0, 0, cssW, cssH);
+  } else if (gray && gray.length === p.width * p.height) {
     if (!offRef.current) offRef.current = document.createElement("canvas");
     const off = offRef.current;
     if (off.width !== p.width || off.height !== p.height) {
@@ -197,8 +216,9 @@ function draw(
   }
 
   // Cool and darken the plate so the overlay separates from it. The footage is
-  // evidence, not the hero.
-  ctx.fillStyle = "rgba(4, 14, 24, 0.18)";
+  // evidence, not the hero - but real colour footage needs less help than a
+  // grey synthetic plate does, so it gets a lighter hand.
+  ctx.fillStyle = videoReady ? "rgba(4, 14, 24, 0.10)" : "rgba(4, 14, 24, 0.18)";
   ctx.fillRect(0, 0, cssW, cssH);
   vignette(ctx, cssW, cssH);
   scanlines(ctx, cssW, cssH, u);
@@ -276,13 +296,14 @@ function draw(
   }
 
   // ---- the trail: accepted arc points, fading behind the head ------
+  const trackColour = p.verified === false ? HUD.reject : HUD.signal;
   let head: Vec2 | null = null;
   if (p.inliers && p.inliers.length) {
     const past = p.inliers.filter((v) => v.frame <= p.frame);
     if (past.length) {
-      glow(ctx, HUD.signal, 10 * u, () => {
+      glow(ctx, trackColour, 10 * u, () => {
         ctx.save();
-        ctx.strokeStyle = HUD.signal;
+        ctx.strokeStyle = trackColour;
         ctx.lineWidth = 1.5 * u;
         ctx.lineJoin = "round";
         ctx.globalAlpha = 0.5;
@@ -299,7 +320,10 @@ function draw(
       for (let i = 0; i < past.length; i++) {
         const age = (past.length - 1 - i) / Math.max(1, past.length - 1);
         const q = S(past[i])!;
-        ctx.fillStyle = `rgba(255, 122, 24, ${(0.95 - age * 0.72).toFixed(3)})`;
+        ctx.fillStyle =
+          p.verified === false
+            ? `rgba(255, 77, 94, ${(0.95 - age * 0.72).toFixed(3)})`
+            : `rgba(255, 122, 24, ${(0.95 - age * 0.72).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(q.x, q.y, (1.6 + (1 - age) * 1.3) * u, 0, Math.PI * 2);
         ctx.fill();
@@ -311,8 +335,15 @@ function draw(
   // ---- the reticle -------------------------------------------------
   const target = head ?? (p.inliers?.length ? S(p.inliers[0]) : null);
   if (target && state !== "standby") {
-    const live = state === "locked";
-    const colour = live ? HUD.signal : state === "resolved" ? HUD.verify : HUD.chrome;
+    const live = state === "locked" || state === "unverified";
+    const colour =
+      state === "unverified"
+        ? HUD.reject
+        : live
+          ? HUD.signal
+          : state === "resolved"
+            ? HUD.verify
+            : HUD.chrome;
     // The reticle is sized by the implement's own projected footprint, taken
     // from the spread of the accepted points around it.
     const half = (live ? 13 : 19) * u;
@@ -326,7 +357,7 @@ function draw(
 
     if (live && head) {
       const rows = telemetryRows(p);
-      if (rows.length) telemetryTag(ctx, head, rows, HUD.signal, cssW, cssH, u);
+      if (rows.length) telemetryTag(ctx, head, rows, colour, cssW, cssH, u);
     }
   }
 
@@ -467,6 +498,7 @@ const STATUS: Record<LockState, { text: string; colour: string }> = {
   acquiring: { text: "ACQUIRING", colour: HUD.chrome },
   locked: { text: "TRACK LOCK", colour: HUD.signal },
   resolved: { text: "FLIGHT RESOLVED", colour: HUD.verify },
+  unverified: { text: "ARC FOUND · NOT MEASURED", colour: HUD.reject },
 };
 
 function drawStatusBar(
@@ -483,7 +515,7 @@ function drawStatusBar(
   const y = 16 * u;
 
   // Blinking record dot, left of the status word.
-  if (state === "scanning" || state === "locked") {
+  if (state === "scanning" || state === "locked" || state === "unverified") {
     ctx.save();
     ctx.globalAlpha = 0.45 + 0.55 * Math.abs(Math.sin(clock * 3.2));
     ctx.fillStyle = st.colour;
@@ -500,7 +532,7 @@ function drawStatusBar(
     y,
     state === "scanning" && p.analysisStage ? `SCANNING · ${p.analysisStage.toUpperCase()}` : st.text,
     st.colour,
-    state === "locked" || state === "resolved" ? conf || 1 : tension,
+    state === "locked" || state === "resolved" || state === "unverified" ? conf || 1 : tension,
     u,
   );
 
@@ -510,7 +542,7 @@ function drawStatusBar(
   micro(ctx, p.sourceLabel ?? "", rx, y - 4 * u, "rgba(232,237,234,0.45)", 8.5 * u, "right");
   micro(
     ctx,
-    `${p.width}×${p.height} · ${p.fps}FPS · T ${t.toFixed(2)}s`,
+    `${p.width}×${p.height} · ${p.fps.toFixed(p.fps < 20 ? 1 : 0)}FPS · T ${t.toFixed(2)}s`,
     rx,
     y + 7 * u,
     "rgba(232,237,234,0.32)",
